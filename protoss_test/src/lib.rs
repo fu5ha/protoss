@@ -4,23 +4,23 @@ macro_rules! define_types {
         use protoss::rkyv::PadToAlign;
 
         #[derive(Debug, Archive, Serialize, Deserialize)]
-        #[archive(as = "ArchivedTestV0")]
-        pub struct TestV0 {
+        #[archive(as = "ArchivedTestEv0")]
+        pub struct TestEv0 {
             pub a: u32,
             pub b: u8,
         }
 
         #[derive(Debug, PartialEq)]
         #[repr(C)]
-        pub struct ArchivedTestV0 {
+        pub struct ArchivedTestEv0 {
             pub a: u32,
             pub b: u8,
             pub _pad0: PadToAlign<(Archived<u32>, Archived<u8>)>,
         }
 
         #[derive(Debug, Archive, Serialize, Deserialize)]
-        #[archive(as = "ArchivedTestV1")]
-        pub struct TestV1 {
+        #[archive(as = "ArchivedTestEv1")]
+        pub struct TestEv1 {
             pub a: u32,
             pub b: u8,
             pub c: u32,
@@ -28,7 +28,7 @@ macro_rules! define_types {
 
         #[derive(Debug, PartialEq)]
         #[repr(C)]
-        pub struct ArchivedTestV1 {
+        pub struct ArchivedTestEv1 {
             pub a: Archived<u32>,
             pub b: Archived<u8>,
             pub _pad0: PadToAlign<(Archived<u32>, Archived<u8>)>,
@@ -37,8 +37,8 @@ macro_rules! define_types {
         }
 
         #[derive(Debug, Archive, Serialize, Deserialize)]
-        #[archive(as = "ArchivedTestV2")]
-        pub struct TestV2 {
+        #[archive(as = "ArchivedTestEv2")]
+        pub struct TestEv2 {
             pub a: u32,
             pub b: u8,
             pub c: u32,
@@ -47,7 +47,7 @@ macro_rules! define_types {
 
         #[derive(Debug, PartialEq)]
         #[repr(C)]
-        pub struct ArchivedTestV2 {
+        pub struct ArchivedTestEv2 {
             pub a: Archived<u32>,
             pub b: Archived<u8>,
             pub _pad0: PadToAlign<(Archived<u32>, Archived<u8>)>,
@@ -65,23 +65,22 @@ mod v1 {
 
     define_types!();
 
-    // #[derive(Evolving)]
-    // #[evolving(current_version = 0.1)]
+    // #[evolving]
     #[derive(rkyv::Archive, rkyv::Serialize)]
     #[archive(as = "<<Self as Evolving>::LatestEvolution as Archive>::Archived")]
     pub struct Test {
-        //#[field(id = 0, since_minor_version = 0)]
+        //#[field(id = 0, since_ev = 0)]
         pub a: u32,
-        //#[field(id = 1, since_minor_version = 0)]
+        //#[field(id = 1, since_ev = 0)]
         pub b: u8,
-        //#[field(id = 2, since_minor_version = 1)]
+        //#[field(id = 2, since_ev = 1)]
         pub c: u32,
     }
 
     // imagine this as Serialize
-    impl From<Test> for ArchivedTestV1 {
+    impl From<Test> for ArchivedTestEv1 {
         fn from(Test { a, b, c}: Test) -> Self {
-            ArchivedTestV1 {
+            ArchivedTestEv1 {
                 a,
                 b,
                 c,
@@ -99,22 +98,22 @@ mod v1 {
 
     unsafe impl Evolving for Test {
         type Probe = TestProbe;
-        type LatestEvolution = TestV1;
+        type LatestEvolution = TestEv1;
         fn probe_metadata(version: Version) -> Result<<AnyProbe<Test> as Pointee>::Metadata, protoss::Error> {
             match version {
-                TestV0::VERSION => Ok(TestV0::METADATA),
-                TestV1::VERSION => Ok(TestV1::METADATA),
+                TestEv0::VERSION => Ok(TestEv0::METADATA),
+                TestEv1::VERSION => Ok(TestEv1::METADATA),
                 _ => Err(protoss::Error::TriedToGetProbeMetadataForNonExistentVersion)
             }
         }
     }
 
-    unsafe impl Evolution for TestV0 {
+    unsafe impl Evolution for TestEv0 {
         type Base = Test;
         const VERSION: Version = Version::new(0);
         const METADATA: ProbeMetadata = core::mem::size_of::<Self::Archived>() as ProbeMetadata;
     }
-    unsafe impl Evolution for TestV1 {
+    unsafe impl Evolution for TestEv1 {
         type Base = Test;
         const VERSION: Version = Version::new(1);
         const METADATA: ProbeMetadata = core::mem::size_of::<Self::Archived>() as ProbeMetadata;
@@ -140,8 +139,8 @@ mod v1 {
 
         fn version(&self) -> Option<Version> {
             match core::mem::size_of_val(&self.data) as ProbeMetadata {
-                TestV0::METADATA => Some(TestV0::VERSION),
-                TestV1::METADATA => Some(TestV1::VERSION),
+                TestEv0::METADATA => Some(TestEv0::VERSION),
+                TestEv1::METADATA => Some(TestEv1::VERSION),
                 _ => None,
             }
         }
@@ -149,17 +148,17 @@ mod v1 {
 
     impl TestProbe {
         pub fn a(&self) -> Option<&u32> {
-            let v0 = unsafe { self.as_version_unchecked::<TestV0>() };
+            let v0 = unsafe { self.as_version_unchecked::<TestEv0>() };
             Some(&v0.a)
         }
 
         pub fn b(&self) -> Option<&u8> {
-            let v0 = unsafe { self.as_version_unchecked::<TestV0>() };
+            let v0 = unsafe { self.as_version_unchecked::<TestEv0>() };
             Some(&v0.b)
         }
 
         pub fn c(&self) -> Option<&u32> {
-            if let Some(v1) = self.probe_as::<TestV1>() {
+            if let Some(v1) = self.probe_as::<TestEv1>() {
                 Some(&v1.c)
             } else {
                 None
@@ -174,25 +173,24 @@ mod v2 {
 
     define_types!();
 
-    // #[derive(Evolving)]
-    // #[evolving(current_version = 0.2)]
+    //#[evolving]
     #[derive(rkyv::Archive, rkyv::Serialize)]
     #[archive(as = "<<Self as Evolving>::LatestEvolution as Archive>::Archived")]
     pub struct Test {
-        //#[field(id = 0, since_minor_version = 0)]
+        //#[field(id = 0, since_ev = 0)]
         pub a: u32,
-        //#[field(id = 1, since_minor_version = 0)]
+        //#[field(id = 1, since_ev = 0)]
         pub b: u8,
-        //#[field(id = 2, since_minor_version = 1)]
+        //#[field(id = 2, since_ev = 1)]
         pub c: u32,
-        //#[field(id = 3, since_minor_version = 2)]
+        //#[field(id = 3, since_ev = 2)]
         pub d: u8,
     }
 
     // imagine this as Serialize
-    impl From<Test> for ArchivedTestV2 {
+    impl From<Test> for ArchivedTestEv2 {
         fn from(Test { a, b, c, d }: Test) -> Self {
-            ArchivedTestV2 {
+            ArchivedTestEv2 {
                 a,
                 b,
                 c,
@@ -212,30 +210,30 @@ mod v2 {
 
     unsafe impl Evolving for Test {
         type Probe = TestProbe;
-        type LatestEvolution = TestV2;
+        type LatestEvolution = TestEv2;
         fn probe_metadata(version: Version) -> Result<<AnyProbe<Test> as Pointee>::Metadata, protoss::Error> {
             match version {
-                TestV0::VERSION => Ok(TestV0::METADATA),
-                TestV1::VERSION => Ok(TestV1::METADATA),
-                TestV2::VERSION => Ok(TestV2::METADATA),
+                TestEv0::VERSION => Ok(TestEv0::METADATA),
+                TestEv1::VERSION => Ok(TestEv1::METADATA),
+                TestEv2::VERSION => Ok(TestEv2::METADATA),
                 _ => Err(protoss::Error::TriedToGetProbeMetadataForNonExistentVersion)
             }
         }
     }
 
-    unsafe impl Evolution for TestV0 {
+    unsafe impl Evolution for TestEv0 {
         type Base = Test;
         const VERSION: Version = Version::new(0);
         const METADATA: ProbeMetadata = core::mem::size_of::<Self::Archived>() as ProbeMetadata;
     }
 
-    unsafe impl Evolution for TestV1 {
+    unsafe impl Evolution for TestEv1 {
         type Base = Test;
         const VERSION: Version = Version::new(1);
         const METADATA: ProbeMetadata = core::mem::size_of::<Self::Archived>() as ProbeMetadata;
     }
 
-    unsafe impl Evolution for TestV2 {
+    unsafe impl Evolution for TestEv2 {
         type Base = Test;
         const VERSION: Version = Version::new(2);
         const METADATA: ProbeMetadata = core::mem::size_of::<Self::Archived>() as ProbeMetadata;
@@ -261,9 +259,9 @@ mod v2 {
 
         fn version(&self) -> Option<Version> {
             match core::mem::size_of_val(&self.data) as ProbeMetadata {
-                TestV0::METADATA => Some(TestV0::VERSION),
-                TestV1::METADATA => Some(TestV1::VERSION),
-                TestV2::METADATA => Some(TestV2::VERSION),
+                TestEv0::METADATA => Some(TestEv0::VERSION),
+                TestEv1::METADATA => Some(TestEv1::VERSION),
+                TestEv2::METADATA => Some(TestEv2::VERSION),
                 _ => None,
             }
         }
@@ -271,17 +269,17 @@ mod v2 {
 
     impl TestProbe {
         pub fn a(&self) -> Option<&u32> {
-            let v0 = unsafe { self.as_version_unchecked::<TestV0>() };
+            let v0 = unsafe { self.as_version_unchecked::<TestEv0>() };
             Some(&v0.a)
         }
 
         pub fn b(&self) -> Option<&u8> {
-            let v0 = unsafe { self.as_version_unchecked::<TestV0>() };
+            let v0 = unsafe { self.as_version_unchecked::<TestEv0>() };
             Some(&v0.b)
         }
 
         pub fn c(&self) -> Option<&u32> {
-            if let Some(v1) = self.probe_as::<TestV1>() {
+            if let Some(v1) = self.probe_as::<TestEv1>() {
                 Some(&v1.c)
             } else {
                 None
@@ -289,7 +287,7 @@ mod v2 {
         }
 
         pub fn d(&self) -> Option<&u8> {
-            if let Some(v2) = self.probe_as::<TestV2>() {
+            if let Some(v2) = self.probe_as::<TestEv2>() {
                 Some(&v2.d)
             } else {
                 None
@@ -340,8 +338,8 @@ mod tests {
 
         let probe = archived_test.as_probe();
 
-        assert_eq!(probe.probe_as::<v1::TestV0>(), Some(&v1::ArchivedTestV0 { a: 1, b: 2, _pad0: pad() }));
-        assert_eq!(probe.probe_as::<v1::TestV1>(), Some(&v1::ArchivedTestV1 { a: 1, b: 2, _pad0: pad(), c: 3, _pad1: pad() }));
+        assert_eq!(probe.probe_as::<v1::TestEv0>(), Some(&v1::ArchivedTestEv0 { a: 1, b: 2, _pad0: pad() }));
+        assert_eq!(probe.probe_as::<v1::TestEv1>(), Some(&v1::ArchivedTestEv1 { a: 1, b: 2, _pad0: pad(), c: 3, _pad1: pad() }));
         assert_eq!(probe.a(), Some(&1));
         assert_eq!(probe.b(), Some(&2));
         assert_eq!(probe.c(), Some(&3));
@@ -350,18 +348,18 @@ mod tests {
     #[test]
     fn basic_evolution_backwards_compat() {
         #[derive(Archive, Serialize)]
-        struct ContainerV1 {
+        struct ContainerEv1 {
             #[with(Evolve)]
             test: v1::Test,
         }
 
         #[derive(Archive, Serialize)]
-        struct ContainerV2 {
+        struct ContainerEv2 {
             #[with(Evolve)]
             test: v2::Test,
         }
 
-        let container_v1 = ContainerV1 {
+        let container_v1 = ContainerEv1 {
             test: v1::Test {
                 a: 1,
                 b: 2,
@@ -376,15 +374,15 @@ mod tests {
 
 
         // consumer is on v2, accesses v1 archive as v2
-        let archived_container: &Archived<ContainerV2> = unsafe { archived_root::<ContainerV2>(&buf) };
+        let archived_container: &Archived<ContainerEv2> = unsafe { archived_root::<ContainerEv2>(&buf) };
         let archived_test: &protoss::ArchivedEvolution<v2::Test> = &archived_container.test;
 
         // v2 probe from v1 archived data
         let probe: &v2::TestProbe = archived_test.as_probe();
 
-        assert_eq!(probe.probe_as::<v2::TestV0>(), Some(&v2::ArchivedTestV0 { a: 1, b: 2, _pad0: pad() }));
-        assert_eq!(probe.probe_as::<v2::TestV1>(), Some(&v2::ArchivedTestV1 { a: 1, b: 2, _pad0: pad(), c: 3, _pad1: pad() }));
-        assert_eq!(probe.probe_as::<v2::TestV2>(), None);
+        assert_eq!(probe.probe_as::<v2::TestEv0>(), Some(&v2::ArchivedTestEv0 { a: 1, b: 2, _pad0: pad() }));
+        assert_eq!(probe.probe_as::<v2::TestEv1>(), Some(&v2::ArchivedTestEv1 { a: 1, b: 2, _pad0: pad(), c: 3, _pad1: pad() }));
+        assert_eq!(probe.probe_as::<v2::TestEv2>(), None);
         assert_eq!(probe.a(), Some(&1));
         assert_eq!(probe.b(), Some(&2));
         assert_eq!(probe.c(), Some(&3));
@@ -394,18 +392,18 @@ mod tests {
     #[test]
     fn basic_evolution_forwards_compat() {
         #[derive(Archive, Serialize)]
-        struct ContainerV1 {
+        struct ContainerEv1 {
             #[with(Evolve)]
             test: v1::Test,
         }
 
         #[derive(Archive, Serialize)]
-        struct ContainerV2 {
+        struct ContainerEv2 {
             #[with(Evolve)]
             test: v2::Test,
         }
 
-        let container_v2 = ContainerV2 {
+        let container_v2 = ContainerEv2 {
             test: v2::Test {
                 a: 5,
                 b: 6,
@@ -421,16 +419,16 @@ mod tests {
 
 
         // consumer is on v1, accesses v2-serialized archive as v1
-        let archived_container: &Archived<ContainerV1> = unsafe { archived_root::<ContainerV1>(&buf) };
+        let archived_container: &Archived<ContainerEv1> = unsafe { archived_root::<ContainerEv1>(&buf) };
         let archived_test: &protoss::ArchivedEvolution<v1::Test> = &archived_container.test;
 
         // v1 probe from v2 archived data
         let probe: &v1::TestProbe = archived_test.as_probe();
 
-        assert_eq!(probe.probe_as::<v1::TestV0>(), Some(&v1::ArchivedTestV0 { a: 5, b: 6, _pad0: pad() }));
-        assert_eq!(probe.probe_as::<v1::TestV1>(), Some(&v1::ArchivedTestV1 { a: 5, b: 6, _pad0: pad(), c: 7, _pad1: pad() }));
+        assert_eq!(probe.probe_as::<v1::TestEv0>(), Some(&v1::ArchivedTestEv0 { a: 5, b: 6, _pad0: pad() }));
+        assert_eq!(probe.probe_as::<v1::TestEv1>(), Some(&v1::ArchivedTestEv1 { a: 5, b: 6, _pad0: pad(), c: 7, _pad1: pad() }));
         // compile fails because v1 doesn't know about V0_2!
-        // assert_eq!(probe.probe_as::<TestV0_2>(), Some(&ArchivedTestV0_2 { a: 5, b: 6, _pad0: pad(), c: 7, _pad1: pad(), d: 8, _pad2: pad() }));
+        // assert_eq!(probe.probe_as::<TestEv0_2>(), Some(&ArchivedTestEv0_2 { a: 5, b: 6, _pad0: pad(), c: 7, _pad1: pad(), d: 8, _pad2: pad() }));
         assert_eq!(probe.a(), Some(&5));
         assert_eq!(probe.b(), Some(&6));
         assert_eq!(probe.c(), Some(&7));
