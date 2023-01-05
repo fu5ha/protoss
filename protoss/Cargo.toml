@@ -11,10 +11,11 @@ repository = "https://github.com/djkoloski/protoss"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-protoss_derive = { version = "=0.1.0", path = "../protoss_derive" }
+protoss_derive = { version = "=0.1.0", path = "../protoss_derive", optional = true }
 ptr_meta = "0.1"
 rkyv = { version = "0.7", optional = true }
 
 [features]
-default = ["rkyv", "std"]
+default = ["rkyv", "std", "derive"]
+derive = ["protoss_derive", "rkyv"]
 std = []

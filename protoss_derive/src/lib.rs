@@ -2,7 +2,7 @@
 //! 
 //! The `#[protoss::evolving]` macro is the main driver. You should apply it to the main 'type definition', like so:
 //! 
-//! ```rust,ignore
+//! ```rust,no_run
 //! #[protoss::evolving]
 //! pub struct Test {
 //!     #[field(id = 0, since_ev = 0)]
@@ -35,21 +35,20 @@
 //!     - `impl rkyv::{Archive, Serialize} for TestEvX` as `ArchivedTestEvX`
 //!     - `impl rkyv::{Archive, Serialize} for Test` as `<Test as Evolving>::LatestEvolution`
 //!
-//! See `protoss_test/src/manual_impl.rs` for an example of what all this implementation would actually look like when expanded.
+//! See `protoss_test/src/manual.rs` for an example of what all this implementation would actually look like when expanded.
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(rustdoc::missing_crate_level_docs)]
 #![deny(missing_docs)]
 
-mod composite;
-mod util;
+mod evolving;
 
 extern crate proc_macro;
 
 use syn::{ItemStruct, Meta, parse_macro_input};
 
-/// legacy, ignore for now
+/// See crate level documentation for now
 #[proc_macro_attribute]
-pub fn protoss(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn evolving(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let attr = if attr.is_empty() {
         None
     } else {
@@ -59,7 +58,7 @@ pub fn protoss(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> 
     let mut input = parse_macro_input!(item as ItemStruct);
     input.generics.make_where_clause();
 
-    match composite::generate(&attr, &input) {
+    match evolving::expand(&attr, &input) {
         Ok(result) => result.into(),
         Err(e) => e.to_compile_error().into(),
     }

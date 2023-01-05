@@ -1,7 +1,7 @@
 macro_rules! define_types {
     () => {
         use rkyv::{Archived, Archive, Serialize, Deserialize};
-        use protoss::rkyv::PadToAlign;
+        use protoss::rkyv_impl::PadToAlign;
 
         #[derive(Debug, Archive, Serialize, Deserialize)]
         #[archive(as = "ArchivedTestEv0")]
@@ -302,7 +302,7 @@ mod tests {
 
     use protoss::Probe;
     use protoss::Evolve;
-    use protoss::rkyv::pad;
+    use protoss::rkyv_impl::pad;
     use rkyv::AlignedVec;
     use rkyv::Archive;
     use rkyv::Archived;

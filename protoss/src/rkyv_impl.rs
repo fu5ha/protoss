@@ -24,6 +24,8 @@ use crate::RawProbe;
 use crate::Version;
 use crate::Evolution;
 
+pub use rkyv;
+
 /// The archived type of [`Version`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArchivedVersion(pub Archived<u16>);

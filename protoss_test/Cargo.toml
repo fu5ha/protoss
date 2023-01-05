@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 memoffset = "0.6"
-protoss = { path = "../protoss", features = ["rkyv"] }
+protoss = { path = "../protoss", features = ["rkyv", "derive"] }
 ptr_meta = "0.1"
 rkyv = { version = "0.7" }
 

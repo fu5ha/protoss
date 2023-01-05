@@ -18,9 +18,12 @@ proc-macro2 = "1.0"
 syn = "1.0"
 quote = "1.0"
 
+[dev-dependencies]
+rkyv = "0.7"
+protoss = { path = "../protoss" }
+
 [features]
 default = []
-rkyv = []
 
 [package.metadata.docs.rs]
 all-features = true

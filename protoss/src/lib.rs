@@ -44,16 +44,17 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub mod rkyv;
+pub mod rkyv_impl;
 mod test_util;
 
 use core::fmt;
 
-use ::ptr_meta::Pointee;
-pub use crate::rkyv::ArchivedEvolution;
-pub use crate::rkyv::AnyProbe;
-pub use crate::rkyv::Evolve;
-// pub use protoss_derive::protoss;
+pub use ::ptr_meta::Pointee;
+pub use crate::rkyv_impl::ArchivedEvolution;
+pub use crate::rkyv_impl::AnyProbe;
+pub use crate::rkyv_impl::Evolve;
+#[cfg(feature = "derive")]
+pub use protoss_derive::evolving;
 
 use ::rkyv::Archive;
 
