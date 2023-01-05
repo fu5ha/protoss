@@ -18,4 +18,5 @@ rkyv = { version = "0.7", optional = true }
 [features]
 default = ["rkyv", "std", "derive"]
 derive = ["protoss_derive", "rkyv"]
+example = ["rkyv", "derive"]
 std = []

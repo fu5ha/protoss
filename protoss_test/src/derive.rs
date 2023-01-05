@@ -76,18 +76,18 @@ mod tests {
     #[test]
     fn basic_evolution_backwards_compat() {
         #[derive(Archive, Serialize)]
-        struct ContainerEv1 {
+        struct ContainerV1 {
             #[with(Evolve)]
             test: v1::Test,
         }
 
         #[derive(Archive, Serialize)]
-        struct ContainerEv2 {
+        struct ContainerV2 {
             #[with(Evolve)]
             test: v2::Test,
         }
 
-        let container_v1 = ContainerEv1 {
+        let container_v1 = ContainerV1 {
             test: v1::Test {
                 a: 1,
                 b: 2,
@@ -102,7 +102,7 @@ mod tests {
 
 
         // consumer is on v2, accesses v1 archive as v2
-        let archived_container: &Archived<ContainerEv2> = unsafe { archived_root::<ContainerEv2>(&buf) };
+        let archived_container: &Archived<ContainerV2> = unsafe { archived_root::<ContainerV2>(&buf) };
         let archived_test: &protoss::ArchivedEvolution<v2::Test> = &archived_container.test;
 
         // v2 probe from v1 archived data
@@ -120,18 +120,18 @@ mod tests {
     #[test]
     fn basic_evolution_forwards_compat() {
         #[derive(Archive, Serialize)]
-        struct ContainerEv1 {
+        struct ContainerV1 {
             #[with(Evolve)]
             test: v1::Test,
         }
 
         #[derive(Archive, Serialize)]
-        struct ContainerEv2 {
+        struct ContainerV2 {
             #[with(Evolve)]
             test: v2::Test,
         }
 
-        let container_v2 = ContainerEv2 {
+        let container_v2 = ContainerV2 {
             test: v2::Test {
                 a: 5,
                 b: 6,
@@ -147,7 +147,7 @@ mod tests {
 
 
         // consumer is on v1, accesses v2-serialized archive as v1
-        let archived_container: &Archived<ContainerEv1> = unsafe { archived_root::<ContainerEv1>(&buf) };
+        let archived_container: &Archived<ContainerV1> = unsafe { archived_root::<ContainerV1>(&buf) };
         let archived_test: &protoss::ArchivedEvolution<v1::Test> = &archived_container.test;
 
         // v1 probe from v2 archived data
@@ -160,7 +160,7 @@ mod tests {
         assert_eq!(probe.a(), Some(&5));
         assert_eq!(probe.b(), Some(&6));
         assert_eq!(probe.c(), Some(&7));
-        // compile fails because v1 doesn't know about field d on V0_2!
+        // compile fails because v1 doesn't know about field d on Ev2!
         // assert_eq!(probe.d(), Some(&8));
     }
 }

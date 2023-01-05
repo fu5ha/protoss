@@ -28,11 +28,327 @@
 //! the old version, and consumers expecting the new version will still be able to read all the fields that were defined
 //! by the older producer.
 //! 
-//! For more on how this works, see the documentation of the [`Evolving`] trait, which is the centerpiece of the `protoss`
+//! For more detail on how this works internally, see the documentation of the [`Evolving`] trait, which is the centerpiece of the `protoss`
 //! model.
 //! 
-//! Also, see the crate-level documentation of [`protoss_derive`] for info on how this system is intended to be
-//! implemented/used by the end user.
+//! # Example
+//! 
+//! Here we'll explore a little example of how `protoss` may be used. We'll use the proc macro as implementing things by hand
+//! is error prone and very verbose. Also, see the crate-level documentation of [`protoss_derive`] for info on how the macro works.
+//! 
+//! 
+//! ## Defining evolving types
+//! 
+//! Here the `v1` and `v2` modules represent two different 'time slices' of the same codebase, which may have been
+//! compiled into binaries that are meant to coexist and interoperate with each other.
+//! 
+//! ```
+//! mod v1 {
+//!     #[protoss::evolving]
+//!     pub struct Test {
+//!         #[field(id = 0, since_ev = 0)]
+//!         pub a: u32,
+//!         #[field(id = 1, since_ev = 0)]
+//!         pub b: u8,
+//!         #[field(id = 2, since_ev = 1)]
+//!         pub c: u32,
+//!     }
+//! }
+//!
+//! mod v2 {
+//!     #[protoss::evolving]
+//!     pub struct Test {
+//!         #[field(id = 1, since_ev = 0)]
+//!         pub b: u8,
+//!         #[field(id = 2, since_ev = 1)]
+//!         pub c: u32,
+//!         #[field(id = 3, since_ev = 2)]
+//!         pub d: u8,
+//!         #[field(id = 0, since_ev = 0)]
+//!         pub a_renamed: u32,
+//!     }
+//! }
+//! ```
+//! 
+//! In `v1`, we have an [`Evolving`] type `Test` which currently has two evolutions, 0 and 1.
+//! Evolution 0 has two fields called `a` (id 0) and `b` (id 1). Evolution 1 has one more field, `c` (id 2).
+//! 
+//! In `v2`, we have that same type `Test`, but this time with three evolutions. Evolution 2 has another field, `d` (id 3).
+//! You may notice that in the definition, we've moved the field `a` to be defined last and renamed it to `a_renamed`,
+//! but it still has the same type (`u32`) and id (0).
+//! 
+//! ## Using evolving types
+//! 
+//! Although `Test` implements [`Evolving`], it still by default serializes as the *static* version of its latest
+//! evolution (i.e., within the context of `v1`, directly as `ArchivedTestEv1`). In order to get the benefits of evolution, we need
+//! to use the `ArchiveWith` modifier, [`Evolve`]. For example, say we have some containing type, `Container`, into which
+//! we want to serialize a `Test` that may evolve over time. We'd define that like so:
+//! 
+//! ```
+//! # mod v1 {
+//! #    #[protoss::evolving]
+//! #    pub struct Test {
+//! #        #[field(id = 0, since_ev = 0)]
+//! #        pub a: u32,
+//! #        #[field(id = 1, since_ev = 0)]
+//! #        pub b: u8,
+//! #        #[field(id = 2, since_ev = 1)]
+//! #        pub c: u32,
+//! #    }
+//! # }
+//! use protoss::Evolve;
+//! 
+//! #[derive(rkyv::Archive, rkyv::Serialize)]
+//! struct Container {
+//!     #[with(Evolve)]
+//!     test: v1::Test,
+//! }
+//! ```
+//! 
+//! Now, the `test` field of `Container` will have an archived type (i.e. serialize as) an [`ArchivedEvolution<Test>`]
+//! 
+//! This means that in order to access it, we'll need to probe it to find out which evolution it contains and thus which versions it has.
+//! 
+//! Say we create and serialize a `Container` like so:
+//! 
+//! ```
+//! # mod v1 {
+//! #    #[protoss::evolving]
+//! #    pub struct Test {
+//! #        #[field(id = 0, since_ev = 0)]
+//! #        pub a: u32,
+//! #        #[field(id = 1, since_ev = 0)]
+//! #        pub b: u8,
+//! #        #[field(id = 2, since_ev = 1)]
+//! #        pub c: u32,
+//! #    }
+//! # }
+//! # use protoss::Evolve;
+//! # #[derive(rkyv::Archive, rkyv::Serialize)]
+//! # struct Container {
+//! #     #[with(Evolve)]
+//! #     test: v1::Test,
+//! # }
+//! use rkyv::ser::serializers::AllocSerializer;
+//! use rkyv::ser::Serializer;
+//! use rkyv::AlignedVec;
+//! 
+//! let container = Container {
+//!     test: v1::Test {
+//!         a: 1,
+//!         b: 2,
+//!         c: 3,
+//!     }
+//! };
+//! 
+//! let mut serializer = AllocSerializer::<256>::default();
+//! serializer.serialize_value(&container).unwrap();
+//! let buf: AlignedVec = serializer.into_serializer().into_inner();
+//! ```
+//! 
+//! We may then access it as its archived form like so:
+//! 
+//! ```
+//! # mod v1 {
+//! #    #[protoss::evolving]
+//! #    pub struct Test {
+//! #        #[field(id = 0, since_ev = 0)]
+//! #        pub a: u32,
+//! #        #[field(id = 1, since_ev = 0)]
+//! #        pub b: u8,
+//! #        #[field(id = 2, since_ev = 1)]
+//! #        pub c: u32,
+//! #    }
+//! # }
+//! # use protoss::Evolve;
+//! # #[derive(rkyv::Archive, rkyv::Serialize)]
+//! # struct Container {
+//! #     #[with(Evolve)]
+//! #     test: v1::Test,
+//! # }
+//! # use rkyv::ser::serializers::AllocSerializer;
+//! # use rkyv::ser::Serializer;
+//! # use rkyv::AlignedVec;
+//! # let container = Container {
+//! #     test: v1::Test {
+//! #         a: 1,
+//! #         b: 2,
+//! #         c: 3,
+//! #     }
+//! # };
+//! # let mut serializer = AllocSerializer::<256>::default();
+//! # serializer.serialize_value(&container).unwrap();
+//! # let buf: AlignedVec = serializer.into_serializer().into_inner();
+//! use protoss::Probe;
+//! 
+//! let archived_container: &ArchivedContainer = unsafe { rkyv::archived_root::<Container>(&buf) };
+//! let archived_test: &protoss::ArchivedEvolution<v1::Test> = &archived_container.test;
+//! 
+//! let probe = archived_test.as_probe();
+//! 
+//! assert_eq!(probe.probe_as::<v1::TestEv0>(), Some(&v1::ArchivedTestEv0::new(1, 2)));
+//! assert_eq!(probe.probe_as::<v1::TestEv1>(), Some(&v1::ArchivedTestEv1::new(1, 2, 3)));
+//! assert_eq!(probe.a(), Some(&1));
+//! assert_eq!(probe.b(), Some(&2));
+//! assert_eq!(probe.c(), Some(&3));
+//! ```
+//! 
+//! ## Using evolving types across different versions
+//! 
+//! Let's start with the example of 'backwards compatibility,' meaning that we have a binary which was compiled
+//! when `v1` was the current version of the code that is *producing* (i.e. serializing) its latest known version of `Test`,
+//! and another binary which was compiled now that `v2` is the current code version, and is *consuming* (i.e. accessing the archived data)
+//! the serialized `Test` that the `v1` binary created.
+//! 
+//! ```
+//! # mod v1 {
+//! #     #[protoss::evolving]
+//! #     pub struct Test {
+//! #         #[field(id = 0, since_ev = 0)]
+//! #         pub a: u32,
+//! #         #[field(id = 1, since_ev = 0)]
+//! #         pub b: u8,
+//! #         #[field(id = 2, since_ev = 1)]
+//! #         pub c: u32,
+//! #     }
+//! # }
+//! # mod v2 {
+//! #     #[protoss::evolving]
+//! #     pub struct Test {
+//! #         #[field(id = 1, since_ev = 0)]
+//! #         pub b: u8,
+//! #         #[field(id = 2, since_ev = 1)]
+//! #         pub c: u32,
+//! #         #[field(id = 3, since_ev = 2)]
+//! #         pub d: u8,
+//! #         #[field(id = 0, since_ev = 0)]
+//! #         pub a_renamed: u32,
+//! #     }
+//! # }
+//! # use rkyv::ser::serializers::AllocSerializer;
+//! # use rkyv::ser::Serializer;
+//! # use rkyv::AlignedVec;
+//! # use rkyv::{Archive, Serialize};
+//! # use protoss::Probe;
+//! # use protoss::Evolve;
+//! #[derive(Archive, Serialize)]
+//! struct ContainerV1 {
+//!     #[with(Evolve)]
+//!     test: v1::Test,
+//! }
+//! 
+//! #[derive(Archive, Serialize)]
+//! struct ContainerV2 {
+//!     #[with(Evolve)]
+//!     test: v2::Test,
+//! }
+//! 
+//! let container_v1 = ContainerV1 {
+//!     test: v1::Test {
+//!         a: 1,
+//!         b: 2,
+//!         c: 3,
+//!     }
+//! };
+//! 
+//! // producer is on v1, serializes a v1
+//! let mut serializer = AllocSerializer::<256>::default();
+//! serializer.serialize_value(&container_v1).unwrap();
+//! let buf: AlignedVec = serializer.into_serializer().into_inner();
+//! 
+//! // consumer is on v2, accesses v1 archive as v2
+//! let archived_container: &ArchivedContainerV2 = unsafe { rkyv::archived_root::<ContainerV2>(&buf) };
+//! let archived_test: &protoss::ArchivedEvolution<v2::Test> = &archived_container.test;
+//! 
+//! // v2 probe from v1 archived data
+//! let probe: &v2::TestProbe = archived_test.as_probe();
+//! 
+//! assert_eq!(probe.probe_as::<v2::TestEv0>(), Some(&v2::ArchivedTestEv0::new(1, 2)));
+//! assert_eq!(probe.probe_as::<v2::TestEv1>(), Some(&v2::ArchivedTestEv1::new(1, 2, 3)));
+//! assert_eq!(probe.probe_as::<v2::TestEv2>(), None);
+//! assert_eq!(probe.a_renamed(), Some(&1));
+//! assert_eq!(probe.b(), Some(&2));
+//! assert_eq!(probe.c(), Some(&3));
+//! assert_eq!(probe.d(), None);
+//! ```
+//! 
+//! Next let's see the same thing in reverse ('forwards compatibility') -- simulating a newer binary compiled with `v2` serializing a `Test` which is then accessed
+//! by an older binary compiled with `v1`.
+//! 
+//! ```
+//! # mod v1 {
+//! #     #[protoss::evolving]
+//! #     pub struct Test {
+//! #         #[field(id = 0, since_ev = 0)]
+//! #         pub a: u32,
+//! #         #[field(id = 1, since_ev = 0)]
+//! #         pub b: u8,
+//! #         #[field(id = 2, since_ev = 1)]
+//! #         pub c: u32,
+//! #     }
+//! # }
+//! # mod v2 {
+//! #     #[protoss::evolving]
+//! #     pub struct Test {
+//! #         #[field(id = 1, since_ev = 0)]
+//! #         pub b: u8,
+//! #         #[field(id = 2, since_ev = 1)]
+//! #         pub c: u32,
+//! #         #[field(id = 3, since_ev = 2)]
+//! #         pub d: u8,
+//! #         #[field(id = 0, since_ev = 0)]
+//! #         pub a_renamed: u32,
+//! #     }
+//! # }
+//! # use rkyv::ser::serializers::AllocSerializer;
+//! # use rkyv::ser::Serializer;
+//! # use rkyv::AlignedVec;
+//! # use rkyv::{Archive, Serialize};
+//! # use protoss::Probe;
+//! # use protoss::Evolve;
+//! #[derive(Archive, Serialize)]
+//! struct ContainerV1 {
+//!     #[with(Evolve)]
+//!     test: v1::Test,
+//! }
+//! 
+//! #[derive(Archive, Serialize)]
+//! struct ContainerV2 {
+//!     #[with(Evolve)]
+//!     test: v2::Test,
+//! }
+//! 
+//! let container_v2 = ContainerV2 {
+//!     test: v2::Test {
+//!         a_renamed: 5,
+//!         b: 6,
+//!         c: 7,
+//!         d: 8,
+//!     }
+//! };
+//! 
+//! // producer is on v2, serializes v2
+//! let mut serializer = AllocSerializer::<256>::default();
+//! serializer.serialize_value(&container_v2).unwrap();
+//! let buf: AlignedVec = serializer.into_serializer().into_inner();
+//! 
+//! // consumer is on v1, accesses v2-serialized archive as v1
+//! let archived_container: &ArchivedContainerV1 = unsafe { rkyv::archived_root::<ContainerV1>(&buf) };
+//! let archived_test: &protoss::ArchivedEvolution<v1::Test> = &archived_container.test;
+//! 
+//! // v1 probe from v2 archived data
+//! let probe: &v1::TestProbe = archived_test.as_probe();
+//! 
+//! assert_eq!(probe.probe_as::<v1::TestEv0>(), Some(&v1::ArchivedTestEv0::new(5, 6)));
+//! assert_eq!(probe.probe_as::<v1::TestEv1>(), Some(&v1::ArchivedTestEv1::new(5, 6, 7)));
+//! // compile fails because v1 doesn't know about Ev2!
+//! // assert_eq!(probe.probe_as::<v1::TestEv2>(), Some(&v2::ArchivedTestEv2::new(5, 6, 7, 8)));
+//! assert_eq!(probe.a(), Some(&5));
+//! assert_eq!(probe.b(), Some(&6));
+//! assert_eq!(probe.c(), Some(&7));
+//! // compile fails because v1 doesn't know about field d on Ev2!
+//! // assert_eq!(probe.d(), Some(&8));
+//! ```
 //! 
 //! [schema evolution]: https://martin.kleppmann.com/2012/12/05/schema-evolution-in-avro-protocol-buffers-thrift.html
 #![deny(unsafe_op_in_unsafe_fn)]
