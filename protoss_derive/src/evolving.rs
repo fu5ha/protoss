@@ -271,7 +271,7 @@ pub fn expand(_attr: &Option<Meta>, input: &ItemStruct) -> Result<TokenStream, E
         });
 
         quote! {
-            impl ::ptr_meta::Pointee for #probe_name {
+            impl ::protoss::Pointee for #probe_name {
                 type Metadata = ::protoss::ProbeMetadata;
             }
 
