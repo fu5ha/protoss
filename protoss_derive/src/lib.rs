@@ -57,7 +57,7 @@
 //! 
 //! This would apply `#[derive(Debug, PartialEq)]` to all the generated `ArchivedTestEvX` structs.
 //! 
-//! You can also apply `#[with(WithWrapper)]` attributes to fields, which will get applied as normal in `rkyv` (see [`rkyv::with`]).
+//! You can also apply `#[with(WithWrapper)]` attributes to fields, which will get applied as normal in `rkyv`.
 //! Notably, this is used with `protoss::Evolve` to nest evolving types, like so:
 //! 
 //! ```rust,no_run
