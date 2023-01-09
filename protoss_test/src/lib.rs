@@ -1,2 +1,2 @@
 mod derive;
-mod manual;
+//mod manual;

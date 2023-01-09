@@ -36,6 +36,51 @@
 //!     - `impl rkyv::{Archive, Serialize} for Test` as `<Test as Evolving>::LatestEvolution`
 //!
 //! See `protoss_test/src/manual.rs` for an example of what all this implementation would actually look like when expanded.
+//! 
+//! You can use the `#[evolution_attr]` and `#[archived_evolution_attr]` attributes on the parent struct to add arbitrary meta attributes
+//! to the derived evolution and archived evolution structs, respectively. For example:
+//! 
+//! ```rust,no_run
+//! #[protoss::evolving]
+//! #[archived_evolution_attr(derive(Debug, PartialEq))]
+//! pub struct Test {
+//!     #[field(id = 0, since_ev = 0)]
+//!     pub a: u32,
+//!     #[field(id = 1, since_ev = 0)]
+//!     pub b: u8,
+//!     #[field(id = 2, since_ev = 1)]
+//!     pub c: u32,
+//!     #[field(id = 3, since_ev = 2)]
+//!     pub d: u8,
+//! }
+//! ```
+//! 
+//! This would apply `#[derive(Debug, PartialEq)]` to all the generated `ArchivedTestEvX` structs.
+//! 
+//! You can also apply `#[with(WithWrapper)]` attributes to fields, which will get applied as normal in `rkyv` (see [`rkyv::with`]).
+//! Notably, this is used with `protoss::Evolve` to nest evolving types, like so:
+//! 
+//! ```rust,no_run
+//! #[protoss::evolving]
+//! #[archived_evolution_attr(derive(Debug, PartialEq))]
+//! pub struct Test {
+//!     #[field(id = 1, since_ev = 0)]
+//!     pub b: u8,
+//!     #[field(id = 2, since_ev = 1)]
+//!     pub c: u32,
+//!     #[field(id = 0, since_ev = 0)]
+//!     pub a: u32,
+//! }
+//!
+//! #[protoss::evolving]
+//! pub struct TestParent {
+//!     #[field(id = 0, since_ev = 0)]
+//!     #[with(protoss::Evolve)] // this will make Test get archived as an ArchivedEvolution<Test>
+//!     pub test: Test,
+//!     #[field(id = 1, since_ev = 0)]
+//!     pub parent_a: u8,
+//! }
+//!```
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(rustdoc::missing_crate_level_docs)]
 #![deny(missing_docs)]

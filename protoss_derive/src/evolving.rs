@@ -1,6 +1,6 @@
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Error, Ident, ItemStruct, Meta, parse::Parse, Token, spanned::Spanned};
+use syn::{parse::Parse, parse_quote, spanned::Spanned, Error, Ident, ItemStruct, Meta, Token};
 
 mod kw {
     syn::custom_keyword!(id);
@@ -37,56 +37,79 @@ struct FieldDescriptor {
     since_ev: u16,
     ident: syn::Ident,
     ty: syn::Type,
+    archived_ty: syn::Type,
+    with_ty: Option<syn::Type>,
 }
 
 impl FieldDescriptor {
     fn try_from_field(field: &syn::Field) -> syn::Result<Self> {
         let field_attr = field
             .attrs
-            .get(0)
-            .filter(|attr| attr.path.is_ident("field"))
-            .ok_or_else(|| syn::Error::new_spanned(field, "all fields must be annotated with a single `#[field(...)]` attribute"))?;
+            .iter()
+            .find(|attr| attr.path.is_ident("field"))
+            .ok_or_else(|| {
+                syn::Error::new_spanned(
+                    field,
+                    "all fields must be annotated with a single `#[field(...)]` attribute",
+                )
+            })?;
 
         let FieldAttrs { id, since_ev } = field_attr.parse_args()?;
 
-        let ident = field.ident.clone().ok_or_else(|| syn::Error::new_spanned(field, "only named fields are supported"))?;
+        let base_ty = field.ty.clone();
+
+        let (archived_ty, with_ty) =
+            if let Some(with_attr) = field.attrs.iter().find(|attr| attr.path.is_ident("with")) {
+                let with_ty: syn::Type = with_attr.parse_args()?;
+                let archived_ty =
+                    parse_quote!(::rkyv::Archived<::rkyv::with::With<#base_ty, #with_ty>>);
+                let with_ty = Some(with_ty);
+                (archived_ty, with_ty)
+            } else {
+                let archived_ty = parse_quote!(::rkyv::Archived<#base_ty>);
+                let with_ty = None;
+                (archived_ty, with_ty)
+            };
+
+        let ident = field
+            .ident
+            .clone()
+            .ok_or_else(|| syn::Error::new_spanned(field, "only named fields are supported"))?;
 
         Ok(Self {
             attr_span: field_attr.span(),
             id,
             since_ev,
             ident,
-            ty: field.ty.clone(),
+            ty: base_ty,
+            archived_ty,
+            with_ty,
         })
     }
 
-    fn rendered(&self) -> RenderedFieldDescriptor {
-        RenderedFieldDescriptor::DataField {
+    fn archived(&self) -> ArchivedFieldDescriptor {
+        ArchivedFieldDescriptor::DataField {
             ident: self.ident.clone(),
-            ty: self.ty.clone(),
+            ty: self.archived_ty.clone(),
         }
     }
 }
 
 #[derive(Clone)]
-enum RenderedFieldDescriptor {
-    DataField {
-        ident: syn::Ident,
-        ty: syn::Type,
-    },
-    EvolutionSeparatorField {
-        ev: u16,
-        types: Vec<syn::Type>
-    },
+enum ArchivedFieldDescriptor {
+    DataField { ident: syn::Ident, ty: syn::Type },
+    EvolutionSeparatorField { ev: u16, types: Vec<syn::Type> },
 }
 
 struct EvolutionDescriptor {
     ev: u16,
     fields: Vec<FieldDescriptor>,
-    rendered_fields: Vec<RenderedFieldDescriptor>,
+    archived_fields: Vec<ArchivedFieldDescriptor>,
 }
 
-fn collect_evolutions(fields: &syn::Fields) -> Result<(Vec<EvolutionDescriptor>, Vec<syn::Field>), Error> {
+fn collect_evolutions(
+    fields: &syn::Fields,
+) -> Result<(Vec<EvolutionDescriptor>, Vec<syn::Field>), Error> {
     let mut field_descriptors = Vec::new();
     let mut stripped_fields = Vec::new();
     let mut latest_evolution = 0;
@@ -98,24 +121,49 @@ fn collect_evolutions(fields: &syn::Fields) -> Result<(Vec<EvolutionDescriptor>,
                 field_descriptors.push(field_desc);
 
                 let mut stripped = field.clone();
-                stripped.attrs = field.attrs.iter().filter(|attr| !attr.path.is_ident("field")).cloned().collect();
+                stripped.attrs = field
+                    .attrs
+                    .iter()
+                    .filter(|attr| !attr.path.is_ident("field"))
+                    .cloned()
+                    .collect();
                 stripped_fields.push(stripped);
             }
-        },
-        _ => return Err(Error::new_spanned(fields, "protoss may only be used on structs with named fields")),
+        }
+        _ => {
+            return Err(Error::new_spanned(
+                fields,
+                "protoss may only be used on structs with named fields",
+            ))
+        }
     };
 
     field_descriptors.sort_by_key(|desc| desc.id);
 
-    let mut evolution_descriptors: Vec<_> = (0..latest_evolution + 1).into_iter().map(|ev| EvolutionDescriptor { ev, fields: Vec::new(), rendered_fields: Vec::new() }).collect();
+    let mut evolution_descriptors: Vec<_> = (0..latest_evolution + 1)
+        .into_iter()
+        .map(|ev| EvolutionDescriptor {
+            ev,
+            fields: Vec::new(),
+            archived_fields: Vec::new(),
+        })
+        .collect();
 
-    fn push_rendered(evolution_descriptors: &mut [EvolutionDescriptor], ev: u16, rendered_desc: &RenderedFieldDescriptor) {
+    fn push_archived(
+        evolution_descriptors: &mut [EvolutionDescriptor],
+        ev: u16,
+        archived_desc: &ArchivedFieldDescriptor,
+    ) {
         for desc in &mut evolution_descriptors[(ev as usize)..] {
-            desc.rendered_fields.push(rendered_desc.clone());
+            desc.archived_fields.push(archived_desc.clone());
         }
     }
 
-    fn push_raw(evolution_descriptors: &mut [EvolutionDescriptor], ev: u16, field: &FieldDescriptor) {
+    fn push_raw(
+        evolution_descriptors: &mut [EvolutionDescriptor],
+        ev: u16,
+        field: &FieldDescriptor,
+    ) {
         for desc in &mut evolution_descriptors[(ev as usize)..] {
             desc.fields.push(field.clone());
         }
@@ -124,18 +172,21 @@ fn collect_evolutions(fields: &syn::Fields) -> Result<(Vec<EvolutionDescriptor>,
     let mut current_ev = 0;
     for (i, field) in field_descriptors.iter().enumerate() {
         if field.since_ev > current_ev {
-            let separator = RenderedFieldDescriptor::EvolutionSeparatorField {
+            let separator = ArchivedFieldDescriptor::EvolutionSeparatorField {
                 ev: current_ev,
-                types: field_descriptors[0..i].iter().map(|desc| desc.ty.clone()).collect(),
+                types: field_descriptors[0..i]
+                    .iter()
+                    .map(|desc| desc.archived_ty.clone())
+                    .collect(),
             };
-            push_rendered(&mut evolution_descriptors, current_ev, &separator);
+            push_archived(&mut evolution_descriptors, current_ev, &separator);
 
             current_ev = field.since_ev;
         } else if field.since_ev < current_ev {
             return Err(Error::new(field.attr_span, "the field with previous id has a higher initial evolution; fields cannot be added to previous evolutions"));
         }
 
-        push_rendered(&mut evolution_descriptors, current_ev, &field.rendered());
+        push_archived(&mut evolution_descriptors, current_ev, &field.archived());
         push_raw(&mut evolution_descriptors, current_ev, field);
     }
 
@@ -162,7 +213,38 @@ pub fn expand(_attr: &Option<Meta>, input: &ItemStruct) -> Result<TokenStream, E
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let where_clause = where_clause.unwrap();
 
-    let attrs = &input.attrs;
+    let (ev_attr_attrs, base_attrs) = input
+        .attrs
+        .iter()
+        .cloned()
+        .partition::<Vec<syn::Attribute>, _>(|attr| {
+            attr.path.is_ident("evolution_attr") || attr.path.is_ident("archived_evolution_attr")
+        });
+    let mut ev_attrs = Vec::new();
+    let mut archived_ev_attrs = Vec::new();
+    for ev_attr in ev_attr_attrs {
+        if let Meta::List(list) = ev_attr.parse_meta()? {
+            for nested in list.nested.iter() {
+                if let syn::NestedMeta::Meta(meta) = nested {
+                    if ev_attr.path.is_ident("evolution_attr") {
+                        ev_attrs.push(meta.clone());
+                    } else if ev_attr.path.is_ident("archived_evolution_attr") {
+                        archived_ev_attrs.push(meta.clone());
+                    }
+                } else {
+                    return Err(Error::new_spanned(
+                        nested,
+                        "[archived_]evolution_attr arguments must be metas",
+                    ));
+                }
+            }
+        } else {
+            return Err(Error::new_spanned(
+                ev_attr,
+                "[archived_]evolution_attr may only be structured list attributes",
+            ));
+        }
+    }
 
     let probe_name = Ident::new(&format!("{}Probe", base_name), base_name.span());
 
@@ -172,57 +254,56 @@ pub fn expand(_attr: &Option<Meta>, input: &ItemStruct) -> Result<TokenStream, E
         let struct_name = ev_struct_name(base_name, desc.ev);
         let archived_name = archived_ev_struct_name(base_name, desc.ev);
         let archived_name_string = format!("{}", archived_name);
-        let (field_idents, field_types): (Vec<syn::Ident>, Vec<syn::Type>) = desc.rendered_fields.iter().filter_map(|f| {
-            match f {
-                RenderedFieldDescriptor::DataField { ident, ty } => Some((ident.clone(), ty.clone())),
-                RenderedFieldDescriptor::EvolutionSeparatorField { .. } => None,
-            }
-        }).unzip();
+        let fields = desc.fields.iter().map(|field| {
+            let with_attr = field.with_ty.as_ref().map(|with_ty| quote!(#[with(#with_ty)])).unwrap_or(quote!());
+            let ident = &field.ident;
+            let ty = &field.ty;
+            quote!(#with_attr pub #ident: #ty)
+        });
 
         quote! {
-            #(#attrs)*
+            #(#[#ev_attrs])*
             #[derive(::protoss::rkyv_impl::rkyv::Archive, ::protoss::rkyv_impl::rkyv::Serialize, ::protoss::rkyv_impl::rkyv::Deserialize)]
             #[archive(as = #archived_name_string)]
             #vis struct #struct_name #generics {
-                #(pub #field_idents: #field_types,)*
+                #(#fields,)*
             }
         }
     });
 
     let archived_evolution_structs = evolutions.iter().map(|desc| {
         let archived_name = archived_ev_struct_name(base_name, desc.ev);
-        let fields = desc.rendered_fields.iter().map(|f| {
-            match f {
-                RenderedFieldDescriptor::DataField { ident, ty } => quote!(pub #ident: #ty),
-                RenderedFieldDescriptor::EvolutionSeparatorField { ev, types } => {
-                    let ident = ev_pad_field_name(*ev);
+        let fields = desc.archived_fields.iter().map(|f| match f {
+            ArchivedFieldDescriptor::DataField { ident, ty } => quote!(pub #ident: #ty),
+            ArchivedFieldDescriptor::EvolutionSeparatorField { ev, types } => {
+                let ident = ev_pad_field_name(*ev);
 
-                    quote!(#ident: ::protoss::rkyv_impl::PadToAlign<(#(#types,)*)>)
-                },
+                quote!(#ident: ::protoss::rkyv_impl::PadToAlign<(#(#types,)*)>)
             }
         });
 
-        let field_args = desc.fields.iter().map(|field| {
-            let ident = &field.ident;
-            let ty = &field.ty;
-            quote!(#ident: #ty)
+        let unarchived_field_tys = desc.fields.iter().map(|field| &field.ty);
+
+        let field_where_clause = quote!(where #(#unarchived_field_tys: ::rkyv::Archive,)*);
+
+        let field_args = desc.archived_fields.iter().filter_map(|field| match field {
+            ArchivedFieldDescriptor::DataField { ident, ty } => Some(quote!(#ident: #ty)),
+            ArchivedFieldDescriptor::EvolutionSeparatorField { .. } => None,
         });
 
-        let field_constructors = desc.rendered_fields.iter().map(|field| {
-            match field {
-                RenderedFieldDescriptor::DataField { ident, .. } => quote!(#ident),
-                RenderedFieldDescriptor::EvolutionSeparatorField { ev, ..} => {
-                    let ident = ev_pad_field_name(*ev);
+        let field_constructors = desc.archived_fields.iter().map(|field| match field {
+            ArchivedFieldDescriptor::DataField { ident, .. } => quote!(#ident),
+            ArchivedFieldDescriptor::EvolutionSeparatorField { ev, .. } => {
+                let ident = ev_pad_field_name(*ev);
 
-                    quote!(#ident: Default::default())
-                },
+                quote!(#ident: Default::default())
             }
         });
 
         quote! {
             #[repr(C)]
-            #[derive(Debug, PartialEq)]
-            #vis struct #archived_name #generics {
+            #(#[#archived_ev_attrs])*
+            #vis struct #archived_name #generics #field_where_clause {
                 #(#fields,)*
             }
 
@@ -257,10 +338,10 @@ pub fn expand(_attr: &Option<Meta>, input: &ItemStruct) -> Result<TokenStream, E
 
         let field_accessors = evolutions.last().unwrap().fields.iter().map(|field| {
             let name = &field.ident;
-            let ty = &field.ty;
+            let archived_ty = &field.archived_ty;
             let required_ev_name = ev_struct_name(base_name, field.since_ev);
             quote! {
-                pub fn #name(&self) -> Option<&#ty> {
+                pub fn #name(&self) -> Option<&#archived_ty> {
                     if let Some(archived_ev) = ::protoss::Probe::probe_as::<#required_ev_name>(self) {
                         Some(&archived_ev.#name)
                     } else {
@@ -332,6 +413,7 @@ pub fn expand(_attr: &Option<Meta>, input: &ItemStruct) -> Result<TokenStream, E
     Ok(quote! {
         #[derive(::protoss::rkyv_impl::rkyv::Archive, ::protoss::rkyv_impl::rkyv::Serialize)]
         #[archive(as = "<<Self as ::protoss::Evolving>::LatestEvolution as ::protoss::rkyv_impl::rkyv::Archive>::Archived")]
+        #(#base_attrs)*
         #vis struct #base_name #generics {
             #(#stripped_fields,)*
         }

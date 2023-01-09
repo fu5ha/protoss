@@ -45,6 +45,7 @@
 //! ```
 //! mod v1 {
 //!     #[protoss::evolving]
+//!     #[archived_evolution_attr(derive(Debug, PartialEq))]
 //!     pub struct Test {
 //!         #[field(id = 0, since_ev = 0)]
 //!         pub a: u32,
@@ -57,6 +58,7 @@
 //!
 //! mod v2 {
 //!     #[protoss::evolving]
+//!     #[archived_evolution_attr(derive(Debug, PartialEq))]
 //!     pub struct Test {
 //!         #[field(id = 1, since_ev = 0)]
 //!         pub b: u8,
@@ -87,6 +89,7 @@
 //! ```
 //! # mod v1 {
 //! #    #[protoss::evolving]
+//! #    #[archived_evolution_attr(derive(Debug, PartialEq))]
 //! #    pub struct Test {
 //! #        #[field(id = 0, since_ev = 0)]
 //! #        pub a: u32,
@@ -114,6 +117,7 @@
 //! ```
 //! # mod v1 {
 //! #    #[protoss::evolving]
+//! #    #[archived_evolution_attr(derive(Debug, PartialEq))]
 //! #    pub struct Test {
 //! #        #[field(id = 0, since_ev = 0)]
 //! #        pub a: u32,
@@ -151,6 +155,7 @@
 //! ```
 //! # mod v1 {
 //! #    #[protoss::evolving]
+//! #    #[archived_evolution_attr(derive(Debug, PartialEq))]
 //! #    pub struct Test {
 //! #        #[field(id = 0, since_ev = 0)]
 //! #        pub a: u32,
@@ -203,6 +208,7 @@
 //! ```
 //! # mod v1 {
 //! #     #[protoss::evolving]
+//! #     #[archived_evolution_attr(derive(Debug, PartialEq))]
 //! #     pub struct Test {
 //! #         #[field(id = 0, since_ev = 0)]
 //! #         pub a: u32,
@@ -214,6 +220,7 @@
 //! # }
 //! # mod v2 {
 //! #     #[protoss::evolving]
+//! #     #[archived_evolution_attr(derive(Debug, PartialEq))]
 //! #     pub struct Test {
 //! #         #[field(id = 1, since_ev = 0)]
 //! #         pub b: u8,
@@ -278,6 +285,7 @@
 //! ```
 //! # mod v1 {
 //! #     #[protoss::evolving]
+//! #     #[archived_evolution_attr(derive(Debug, PartialEq))]
 //! #     pub struct Test {
 //! #         #[field(id = 0, since_ev = 0)]
 //! #         pub a: u32,
@@ -289,6 +297,7 @@
 //! # }
 //! # mod v2 {
 //! #     #[protoss::evolving]
+//! #     #[archived_evolution_attr(derive(Debug, PartialEq))]
 //! #     pub struct Test {
 //! #         #[field(id = 1, since_ev = 0)]
 //! #         pub b: u8,
