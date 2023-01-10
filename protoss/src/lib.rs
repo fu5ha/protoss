@@ -1,6 +1,9 @@
 //! `protoss` implements a protocol for [schema evolution] of
 //! binary serialized data, designed to be used with [`rkyv`][::rkyv].
 //! 
+//! **DISCLAIMER**: Things are still heavily WIP and may move/change/break at any time (sorry!) though I think there's a solid
+//! useful base here.
+//! 
 //! It offers **full** compatibilty\* (forward and backward) and **zero-copy deserialization** among "[`Evolution`]s"
 //! of a base "[`Evolving`]" type, under a restrictive set of allowed changes, similar to Flatbuffers and Cap'n Proto.
 //!
