@@ -4,6 +4,47 @@ macro_rules! define_types {
         use protoss::rkyv_impl::PadToAlign;
 
         #[derive(Debug, Archive, Serialize, Deserialize)]
+        #[archive(as = "ArchivedTestEnumEv0")]
+        pub enum TestEnumEv0 {
+            A(TestEv0),
+        }
+
+        #[derive(Debug, PartialEq)]
+        #[repr(C, u64)]
+        pub enum ArchivedTestEnumEv0 {
+            A(ArchivedTestEv0) = 0,
+        }
+
+        #[derive(Debug, Archive, Serialize, Deserialize)]
+        #[archive(as = "ArchivedTestEnumEv1")]
+        pub enum TestEnumEv1 {
+            A(TestEv1),
+            B(BarEv0),
+        }
+
+        #[derive(Debug, PartialEq)]
+        #[repr(C, u64)]
+        pub enum ArchivedTestEnumEv1 {
+            A(ArchivedTestEv1) = 0,
+            B(ArchivedBarEv0) = 1,
+        }
+
+        #[derive(Debug, Archive, Serialize, Deserialize)]
+        #[archive(as = "ArchivedBarEv0")]
+        pub struct BarEv0 {
+            pub a: u64,
+            pub b: u8,
+        }
+
+        #[derive(Debug, PartialEq)]
+        #[repr(C)]
+        pub struct ArchivedBarEv0 {
+            pub a: u64,
+            pub b: u8,
+            pub _pad0: PadToAlign<(Archived<u64>, Archived<u8>)>,
+        }
+
+        #[derive(Debug, Archive, Serialize, Deserialize)]
         #[archive(as = "ArchivedTestEv0")]
         pub struct TestEv0 {
             pub a: u32,
@@ -64,6 +105,167 @@ mod v1 {
     use ptr_meta::Pointee;
 
     define_types!();
+
+    // #[evolving]
+    #[derive(rkyv::Archive, rkyv::Serialize)]
+    #[archive(as = "<<Self as Evolving>::LatestEvolution as Archive>::Archived")]
+    pub enum TestEnum {
+        //#[variant(id = 0, since_ev = 0)]
+        A(Test),
+        //#[variant(id = 1, since_ev = 1)]
+        B(Bar),
+    }
+
+    #[derive(Pointee)]
+    #[repr(C)]
+    pub struct TestEnumProbe {
+        discriminant: u64,
+        variant_data: [u8]
+    }
+
+    unsafe impl Evolving for TestEnum {
+        type Probe = TestEnumProbe;
+        type LatestEvolution = TestEnumEv1;
+        fn probe_metadata(version: Version) -> Result<ProbeMetadata, protoss::Error> {
+            match version {
+                TestEnumEv0::VERSION => Ok(core::mem::size_of::<rkyv::Archived<TestEnumV0>>() - 8),
+                TestEnumEv1::VERSION => Ok(TestEnumEv1::METADATA),
+                _ => Err(protoss::Error::TriedToGetProbeMetadataForNonExistentVersion)
+            }
+        }
+    }
+
+    unsafe impl Evolution for TestEnumEv0 {
+        type Base = TestEnum;
+        type Meta = u64;
+        const VERSION: Version = Version::new(0);
+        const METADATA: ProbeMetadata = core::mem::size_of::<Self::Archived>() as ProbeMetadata;
+    }
+
+    unsafe impl Evolution for TestEnumEv1 {
+        type Base = TestEnum;
+        const VERSION: Version = Version::new(1);
+        const METADATA: ProbeMetadata = core::mem::size_of::<Self::Archived>() as ProbeMetadata;
+    }
+
+    unsafe impl Probe for TestEnumProbe {
+        type Base = TestEnum;
+
+        #[inline(always)]
+        unsafe fn as_version_unchecked<V: Evolution<Base = TestEnum>>(&self) -> &V::Archived {
+            &*self.as_ptr().cast::<V::Archived>()
+        }
+
+        fn probe_as<V: Evolution<Base = Bar>>(&self) -> Option<&V::Archived> {
+            let data_size = core::mem::size_of_val(&self.data);
+            let version_size = core::mem::size_of::<V::Archived>();
+            if version_size <= data_size {
+                Some(unsafe { self.as_version_unchecked::<V>() })
+            } else {
+                None
+            }
+        }
+
+        fn version(&self) -> Option<Version> {
+            match core::mem::size_of_val(&self.data) as ProbeMetadata {
+                BarEv0::METADATA => Some(BarEv0::VERSION),
+                _ => None,
+            }
+        }
+    }
+
+    impl TestEnumProbe {
+        pub fn a(&self) -> Option<&> {
+            let v0 = unsafe { self.as_version_unchecked::<BarEv0>() };
+            Some(&v0.a)
+        }
+
+        pub fn b(&self) -> Option<&u8> {
+            let v0 = unsafe { self.as_version_unchecked::<BarEv0>() };
+            Some(&v0.b)
+        }
+    }
+    // #[evolving]
+    #[derive(rkyv::Archive, rkyv::Serialize)]
+    #[archive(as = "<<Self as Evolving>::LatestEvolution as Archive>::Archived")]
+    pub struct Bar {
+        //#[field(id = 0, since_ev = 0)]
+        pub a: u64,
+        //#[field(id = 1, since_ev = 0)]
+        pub b: u8,
+    }
+
+    // imagine this as Serialize
+    impl From<Bar> for ArchivedBarEv0 {
+        fn from(Test { a, b, c}: Test) -> Self {
+            ArchivedBarEv0 {
+                a,
+                b,
+                _pad0: Default::default(),
+            }
+        }
+    }
+
+    #[derive(Pointee)]
+    #[repr(transparent)]
+    pub struct BarProbe {
+        data: [u8]
+    }
+
+    unsafe impl Evolving for Bar {
+        type Probe = BarProbe;
+        type LatestEvolution = BarEv0;
+        fn probe_metadata(version: Version) -> Result<ProbeMetadata, protoss::Error> {
+            match version {
+                BarEv0::VERSION => Ok(BarEv0::METADATA),
+                _ => Err(protoss::Error::TriedToGetProbeMetadataForNonExistentVersion)
+            }
+        }
+    }
+
+    unsafe impl Evolution for BarEv0 {
+        type Base = Test;
+        const VERSION: Version = Version::new(0);
+        const METADATA: ProbeMetadata = core::mem::size_of::<Self::Archived>() as ProbeMetadata;
+    }
+
+    unsafe impl Probe for BarProbe {
+        type Base = Bar;
+
+        #[inline(always)]
+        unsafe fn as_version_unchecked<V: Evolution<Base = Bar>>(&self) -> &V::Archived {
+            &*self.data.as_ptr().cast::<V::Archived>()
+        }
+
+        fn probe_as<V: Evolution<Base = Bar>>(&self) -> Option<&V::Archived> {
+            let data_size = core::mem::size_of_val(&self.data);
+            let version_size = core::mem::size_of::<V::Archived>();
+            if version_size <= data_size {
+                Some(unsafe { self.as_version_unchecked::<V>() })
+            } else {
+                None
+            }
+        }
+
+        fn version(&self) -> Option<Version> {
+            match core::mem::size_of_val(&self.data) as ProbeMetadata {
+                BarEv0::METADATA => Some(BarEv0::VERSION),
+                _ => None,
+            }
+        }
+    }
+
+    impl BarProbe {
+        pub fn a(&self) -> Option<&u32> {
+            let v0 = unsafe { self.as_version_unchecked::<BarEv0>() };
+            Some(&v0.a)
+        }
+
+        pub fn b(&self) -> Option<&u8> {
+            let v0 = unsafe { self.as_version_unchecked::<BarEv0>() };
+            Some(&v0.b)
+        }
+    }
 
     // #[evolving]
     #[derive(rkyv::Archive, rkyv::Serialize)]

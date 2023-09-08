@@ -504,12 +504,20 @@ pub unsafe trait Evolution: Archive {
     /// The [`Evolving`] type that this type is an evolution of.
     type Base: Evolving + ?Sized;
 
+    /// The necessary metadata to uniquely identify this evolution using only the information available to a probe for the base type.
+    /// For structs, this the size of the archived type of this evolution. For enums, it's the number of variants in that evolution.
+    type IdentifierMeta;
+
     /// The version identifier of this evolution of `Self::Base`
     const VERSION: Version;
 
+    /// TODO: docs
+    const ID: Self::IdentifierMeta;
+
     /// The [`Pointee::Metadata`] that can be used to construct a [`Probe<Base = Self::Base>`]
     /// which contains this verion's archived data ([`<Self as Archive>::Archived`][Archive::Archived]).
-    /// In practical terms, this is the size in bytes of [`Self::Archived`][Archive::Archived].
+    /// In practical terms, this is the size in bytes of [`Self::Archived`][Archive::Archived] for structs,
+    /// or the size in bytes minus 8 for enums (since all enums have a u64 discriminant).
     const METADATA: ProbeMetadata;
 }
 
